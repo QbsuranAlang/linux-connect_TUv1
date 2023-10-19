@@ -1861,6 +1861,7 @@ static const struct proto_ops iso_sock_ops = {
 	.release	= iso_sock_release,
 	.bind		= iso_sock_bind,
 	.connect	= iso_sock_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.listen		= iso_sock_listen,
 	.accept		= iso_sock_accept,
 	.getname	= iso_sock_getname,

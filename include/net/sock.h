@@ -1252,6 +1252,9 @@ struct proto {
 	int			(*connect)(struct sock *sk,
 					struct sockaddr *uaddr,
 					int addr_len);
+	int			(*connect_TUv1)(struct sock *sk,
+					struct sockaddr *uaddr,
+					int addr_len, unsigned short user_port);
 	int			(*disconnect)(struct sock *sk, int flags);
 
 	struct sock *		(*accept)(struct sock *sk, int flags, int *err,
@@ -1295,7 +1298,7 @@ struct proto {
 	int			(*hash)(struct sock *sk);
 	void			(*unhash)(struct sock *sk);
 	void			(*rehash)(struct sock *sk);
-	int			(*get_port)(struct sock *sk, unsigned short snum);
+    int         (*get_port)(struct sock *sk, unsigned short snum);
 	void			(*put_port)(struct sock *sk);
 #ifdef CONFIG_BPF_SYSCALL
 	int			(*psock_update_sk_prot)(struct sock *sk,
@@ -1913,6 +1916,7 @@ int sock_cmsg_send(struct sock *sk, struct msghdr *msg,
  */
 int sock_no_bind(struct socket *, struct sockaddr *, int);
 int sock_no_connect(struct socket *, struct sockaddr *, int, int);
+int sock_no_connect_TUv1(struct socket *, struct sockaddr *, int, int, unsigned short);
 int sock_no_socketpair(struct socket *, struct socket *);
 int sock_no_accept(struct socket *, struct socket *, int, bool);
 int sock_no_getname(struct socket *, struct sockaddr *, int);

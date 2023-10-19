@@ -256,6 +256,7 @@ COND_SYSCALL(sendmsg);
 COND_SYSCALL_COMPAT(sendmsg);
 COND_SYSCALL(recvmsg);
 COND_SYSCALL_COMPAT(recvmsg);
+COND_SYSCALL(connect_TUv1);
 
 /* mm/filemap.c */
 

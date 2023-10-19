@@ -269,6 +269,140 @@ out:
 }
 EXPORT_SYMBOL_GPL(__ip6_datagram_connect);
 
+int __ip6_datagram_connect_TUv1(struct sock *sk, struct sockaddr *uaddr,
+			   int addr_len, unsigned short userport)
+{
+	struct sockaddr_in6	*usin = (struct sockaddr_in6 *) uaddr;
+	struct inet_sock	*inet = inet_sk(sk);
+	struct ipv6_pinfo	*np = inet6_sk(sk);
+	struct in6_addr		*daddr, old_daddr;
+	__be32			fl6_flowlabel = 0;
+	__be32			old_fl6_flowlabel;
+	__be16			old_dport;
+	int			addr_type;
+	int			err;
+
+	if (usin->sin6_family == AF_INET) {
+		if (ipv6_only_sock(sk))
+			return -EAFNOSUPPORT;
+		err = __ip4_datagram_connect_TUv1(sk, uaddr, addr_len, userport);
+		goto ipv4_connected;
+	}
+
+	if (addr_len < SIN6_LEN_RFC2133)
+		return -EINVAL;
+
+	if (usin->sin6_family != AF_INET6)
+		return -EAFNOSUPPORT;
+
+	if (np->sndflow)
+		fl6_flowlabel = usin->sin6_flowinfo & IPV6_FLOWINFO_MASK;
+
+	if (ipv6_addr_any(&usin->sin6_addr)) {
+		/*
+		 *	connect to self
+		 */
+		if (ipv6_addr_v4mapped(&sk->sk_v6_rcv_saddr))
+			ipv6_addr_set_v4mapped(htonl(INADDR_LOOPBACK),
+					       &usin->sin6_addr);
+		else
+			usin->sin6_addr = in6addr_loopback;
+	}
+
+	addr_type = ipv6_addr_type(&usin->sin6_addr);
+
+	daddr = &usin->sin6_addr;
+
+	if (addr_type & IPV6_ADDR_MAPPED) {
+		struct sockaddr_in sin;
+
+		if (ipv6_only_sock(sk)) {
+			err = -ENETUNREACH;
+			goto out;
+		}
+		sin.sin_family = AF_INET;
+		sin.sin_addr.s_addr = daddr->s6_addr32[3];
+		sin.sin_port = usin->sin6_port;
+
+		err = __ip4_datagram_connect_TUv1(sk,
+					     (struct sockaddr *) &sin,
+					     sizeof(sin),
+					     userport);
+
+ipv4_connected:
+		if (err)
+			goto out;
+
+		ipv6_addr_set_v4mapped(inet->inet_daddr, &sk->sk_v6_daddr);
+
+		if (ipv6_addr_any(&np->saddr) ||
+		    ipv6_mapped_addr_any(&np->saddr))
+			ipv6_addr_set_v4mapped(inet->inet_saddr, &np->saddr);
+
+		if (ipv6_addr_any(&sk->sk_v6_rcv_saddr) ||
+		    ipv6_mapped_addr_any(&sk->sk_v6_rcv_saddr)) {
+			ipv6_addr_set_v4mapped(inet->inet_rcv_saddr,
+					       &sk->sk_v6_rcv_saddr);
+			if (sk->sk_prot->rehash)
+				sk->sk_prot->rehash(sk);
+		}
+
+		goto out;
+	}
+
+	if (__ipv6_addr_needs_scope_id(addr_type)) {
+		if (addr_len >= sizeof(struct sockaddr_in6) &&
+		    usin->sin6_scope_id) {
+			if (!sk_dev_equal_l3scope(sk, usin->sin6_scope_id)) {
+				err = -EINVAL;
+				goto out;
+			}
+			WRITE_ONCE(sk->sk_bound_dev_if, usin->sin6_scope_id);
+		}
+
+		if (!sk->sk_bound_dev_if && (addr_type & IPV6_ADDR_MULTICAST))
+			WRITE_ONCE(sk->sk_bound_dev_if, np->mcast_oif);
+
+		/* Connect to link-local address requires an interface */
+		if (!sk->sk_bound_dev_if) {
+			err = -EINVAL;
+			goto out;
+		}
+	}
+
+	/* save the current peer information before updating it */
+	old_daddr = sk->sk_v6_daddr;
+	old_fl6_flowlabel = np->flow_label;
+	old_dport = inet->inet_dport;
+
+	sk->sk_v6_daddr = *daddr;
+	np->flow_label = fl6_flowlabel;
+	inet->inet_dport = usin->sin6_port;
+
+	/*
+	 *	Check for a route to destination an obtain the
+	 *	destination cache for it.
+	 */
+
+	err = ip6_datagram_dst_update(sk, true);
+	if (err) {
+		/* Restore the socket peer info, to keep it consistent with
+		 * the old socket state
+		 */
+		sk->sk_v6_daddr = old_daddr;
+		np->flow_label = old_fl6_flowlabel;
+		inet->inet_dport = old_dport;
+		goto out;
+	}
+
+	reuseport_has_conns_set(sk);
+	sk->sk_state = TCP_ESTABLISHED;
+	sk_set_txhash(sk);
+out:
+	return err;
+}
+EXPORT_SYMBOL_GPL(__ip6_datagram_connect_TUv1);
+
 int ip6_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 {
 	int res;
@@ -280,6 +414,17 @@ int ip6_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 }
 EXPORT_SYMBOL_GPL(ip6_datagram_connect);
 
+int ip6_datagram_connect_TUv1(struct sock *sk, struct sockaddr *uaddr, int addr_len, unsigned short userport)
+{
+	int res;
+
+	lock_sock(sk);
+	res = __ip6_datagram_connect_TUv1(sk, uaddr, addr_len, userport);
+	release_sock(sk);
+	return res;
+}
+EXPORT_SYMBOL_GPL(ip6_datagram_connect_TUv1);
+
 int ip6_datagram_connect_v6_only(struct sock *sk, struct sockaddr *uaddr,
 				 int addr_len)
 {
@@ -289,6 +434,16 @@ int ip6_datagram_connect_v6_only(struct sock *sk, struct sockaddr *uaddr,
 	return ip6_datagram_connect(sk, uaddr, addr_len);
 }
 EXPORT_SYMBOL_GPL(ip6_datagram_connect_v6_only);
+
+int ip6_datagram_connect_v6_only_TUv1(struct sock *sk, struct sockaddr *uaddr,
+				 int addr_len, unsigned short userport)
+{
+	DECLARE_SOCKADDR(struct sockaddr_in6 *, sin6, uaddr);
+	if (sin6->sin6_family != AF_INET6)
+		return -EAFNOSUPPORT;
+	return ip6_datagram_connect_TUv1(sk, uaddr, addr_len, userport);
+}
+EXPORT_SYMBOL_GPL(ip6_datagram_connect_v6_only_TUv1);
 
 static void ipv6_icmp_error_rfc4884(const struct sk_buff *skb,
 				    struct sock_ee_data_rfc4884 *out)

@@ -3152,6 +3152,13 @@ int sock_no_connect(struct socket *sock, struct sockaddr *saddr,
 }
 EXPORT_SYMBOL(sock_no_connect);
 
+int sock_no_connect_TUv1(struct socket *sock, struct sockaddr *saddr,
+		    int len, int flags, unsigned short userport)
+{
+	return -EOPNOTSUPP;
+}
+EXPORT_SYMBOL(sock_no_connect_TUv1);
+
 int sock_no_socketpair(struct socket *sock1, struct socket *sock2)
 {
 	return -EOPNOTSUPP;

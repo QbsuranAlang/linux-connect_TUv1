@@ -165,6 +165,7 @@ static struct proto_ops algif_rng_ops = {
 	.family		=	PF_ALG,
 
 	.connect	=	sock_no_connect,
+	.connect_TUv1 = sock_no_connect_TUv1,
 	.socketpair	=	sock_no_socketpair,
 	.getname	=	sock_no_getname,
 	.ioctl		=	sock_no_ioctl,
@@ -184,6 +185,7 @@ static struct proto_ops __maybe_unused algif_rng_test_ops = {
 	.family		=	PF_ALG,
 
 	.connect	=	sock_no_connect,
+	.connect_TUv1 = sock_no_connect_TUv1,
 	.socketpair	=	sock_no_socketpair,
 	.getname	=	sock_no_getname,
 	.ioctl		=	sock_no_ioctl,

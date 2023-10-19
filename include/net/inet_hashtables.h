@@ -473,7 +473,15 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 			int (*check_established)(struct inet_timewait_death_row *,
 						 struct sock *, __u16,
 						 struct inet_timewait_sock **));
+int __inet_hash_connect_TUv1(struct inet_timewait_death_row *death_row,
+			struct sock *sk, u64 port_offset,
+			int (*check_established)(struct inet_timewait_death_row *,
+						 struct sock *, __u16,
+						 struct inet_timewait_sock **),
+						 unsigned short userport);
 
 int inet_hash_connect(struct inet_timewait_death_row *death_row,
 		      struct sock *sk);
+int inet_hash_connect_TUv1(struct inet_timewait_death_row *death_row,
+		      struct sock *sk, unsigned short userport);
 #endif /* _INET_HASHTABLES_H */

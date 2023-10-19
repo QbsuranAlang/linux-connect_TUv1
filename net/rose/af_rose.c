@@ -1483,6 +1483,7 @@ static const struct proto_ops rose_proto_ops = {
 	.release	=	rose_release,
 	.bind		=	rose_bind,
 	.connect	=	rose_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair	=	sock_no_socketpair,
 	.accept		=	rose_accept,
 	.getname	=	rose_getname,

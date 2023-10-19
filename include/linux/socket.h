@@ -445,8 +445,12 @@ extern struct file *__sys_socket_file(int family, int type, int protocol);
 extern int __sys_bind(int fd, struct sockaddr __user *umyaddr, int addrlen);
 extern int __sys_connect_file(struct file *file, struct sockaddr_storage *addr,
 			      int addrlen, int file_flags);
+extern int __sys_connect_file_TUv1(struct file *file, struct sockaddr_storage *addr,
+			      int addrlen, int file_flags, unsigned short userport);
 extern int __sys_connect(int fd, struct sockaddr __user *uservaddr,
 			 int addrlen);
+extern int __sys_connect_TUv1(int fd, struct sockaddr __user *uservaddr,
+			 int addrlen, unsigned short userport);
 extern int __sys_listen(int fd, int backlog);
 extern int __sys_getsockname(int fd, struct sockaddr __user *usockaddr,
 			     int __user *usockaddr_len);

@@ -44,6 +44,7 @@
 #define SYS_ACCEPT4	18		/* sys_accept4(2)		*/
 #define SYS_RECVMMSG	19		/* sys_recvmmsg(2)		*/
 #define SYS_SENDMMSG	20		/* sys_sendmmsg(2)		*/
+#define SYS_CONNECT_TU_V1	21		/* sys_connect_TUv1(x)		*/
 
 typedef enum {
 	SS_FREE = 0,			/* not allocated		*/

@@ -1220,6 +1220,7 @@ static const struct proto_ops llc_ui_ops = {
 	.release     = llc_ui_release,
 	.bind	     = llc_ui_bind,
 	.connect     = llc_ui_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair  = sock_no_socketpair,
 	.accept      = llc_ui_accept,
 	.getname     = llc_ui_getname,

@@ -187,6 +187,23 @@ static int inet_autobind(struct sock *sk)
 	return 0;
 }
 
+static int inet_autobind_TUv1(struct sock *sk, unsigned short userport)
+{
+	struct inet_sock *inet;
+	/* We may need to bind the socket. */
+	lock_sock(sk);
+	inet = inet_sk(sk);
+	if (!inet->inet_num) {
+			if (sk->sk_prot->get_port(sk, userport)) {
+			release_sock(sk);
+			return -EAGAIN;
+		}
+		inet->inet_sport = htons(inet->inet_num);
+	}
+	release_sock(sk);
+	return 0;
+}
+
 /*
  *	Move a socket into listening state.
  */
@@ -581,6 +598,34 @@ int inet_dgram_connect(struct socket *sock, struct sockaddr *uaddr,
 }
 EXPORT_SYMBOL(inet_dgram_connect);
 
+int inet_dgram_connect_TUv1(struct socket *sock, struct sockaddr *uaddr,
+		       int addr_len, int flags, unsigned short userport)
+{
+	struct sock *sk = sock->sk;
+	const struct proto *prot;
+	int err;
+
+	if (addr_len < sizeof(uaddr->sa_family))
+		return -EINVAL;
+
+	/* IPV6_ADDRFORM can change sk->sk_prot under us. */
+	prot = READ_ONCE(sk->sk_prot);
+
+	if (uaddr->sa_family == AF_UNSPEC)
+		return prot->disconnect(sk, flags);
+
+	if (BPF_CGROUP_PRE_CONNECT_ENABLED(sk)) {
+		err = prot->pre_connect(sk, uaddr, addr_len);
+		if (err)
+			return err;
+	}
+
+	if (data_race(!inet_sk(sk)->inet_num) && inet_autobind_TUv1(sk, userport))
+		return -EAGAIN;
+	return prot->connect_TUv1(sk, uaddr, addr_len, userport);
+}
+EXPORT_SYMBOL(inet_dgram_connect_TUv1);
+
 static long inet_wait_for_connect(struct sock *sk, long timeo, int writebias)
 {
 	DEFINE_WAIT_FUNC(wait, woken_wake_function);
@@ -721,6 +766,116 @@ sock_error:
 }
 EXPORT_SYMBOL(__inet_stream_connect);
 
+int __inet_stream_connect_TUv1(struct socket *sock, struct sockaddr *uaddr,
+			  int addr_len, int flags, int is_sendmsg, unsigned short userport)
+{
+	struct sock *sk = sock->sk;
+	int err;
+	long timeo;
+
+	/*
+	 * uaddr can be NULL and addr_len can be 0 if:
+	 * sk is a TCP fastopen active socket and
+	 * TCP_FASTOPEN_CONNECT sockopt is set and
+	 * we already have a valid cookie for this socket.
+	 * In this case, user can call write() after connect().
+	 * write() will invoke tcp_sendmsg_fastopen() which calls
+	 * __inet_stream_connect_TUv1().
+	 */
+	if (uaddr) {
+		if (addr_len < sizeof(uaddr->sa_family))
+			return -EINVAL;
+
+		if (uaddr->sa_family == AF_UNSPEC) {
+			err = sk->sk_prot->disconnect(sk, flags);
+			sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
+			goto out;
+		}
+	}
+
+	switch (sock->state) {
+	default:
+		err = -EINVAL;
+		goto out;
+	case SS_CONNECTED:
+		err = -EISCONN;
+		goto out;
+	case SS_CONNECTING:
+		if (inet_sk(sk)->defer_connect)
+			err = is_sendmsg ? -EINPROGRESS : -EISCONN;
+		else
+			err = -EALREADY;
+		/* Fall out of switch with err, set for this state */
+		break;
+	case SS_UNCONNECTED:
+		err = -EISCONN;
+		if (sk->sk_state != TCP_CLOSE)
+			goto out;
+
+		if (BPF_CGROUP_PRE_CONNECT_ENABLED(sk)) {
+			err = sk->sk_prot->pre_connect(sk, uaddr, addr_len);
+			if (err)
+				goto out;
+		}
+
+		err = sk->sk_prot->connect_TUv1(sk, uaddr, addr_len, userport);
+		if (err < 0)
+			goto out;
+
+		sock->state = SS_CONNECTING;
+
+		if (!err && inet_sk(sk)->defer_connect)
+			goto out;
+
+		/* Just entered SS_CONNECTING state; the only
+		 * difference is that return value in non-blocking
+		 * case is EINPROGRESS, rather than EALREADY.
+		 */
+		err = -EINPROGRESS;
+		break;
+	}
+
+	timeo = sock_sndtimeo(sk, flags & O_NONBLOCK);
+
+	if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV)) {
+		int writebias = (sk->sk_protocol == IPPROTO_TCP) &&
+				tcp_sk(sk)->fastopen_req &&
+				tcp_sk(sk)->fastopen_req->data ? 1 : 0;
+
+		/* Error code is set above */
+		if (!timeo || !inet_wait_for_connect(sk, timeo, writebias))
+			goto out;
+
+		err = sock_intr_errno(timeo);
+		if (signal_pending(current))
+			goto out;
+	}
+
+	/* Connection was closed by RST, timeout, ICMP error
+	 * or another process disconnected us.
+	 */
+	if (sk->sk_state == TCP_CLOSE)
+		goto sock_error;
+
+	/* sk->sk_err may be not zero now, if RECVERR was ordered by user
+	 * and error was received after socket entered established state.
+	 * Hence, it is handled normally after connect() return successfully.
+	 */
+
+	sock->state = SS_CONNECTED;
+	err = 0;
+out:
+	return err;
+
+sock_error:
+	err = sock_error(sk) ? : -ECONNABORTED;
+	sock->state = SS_UNCONNECTED;
+	if (sk->sk_prot->disconnect(sk, flags))
+		sock->state = SS_DISCONNECTING;
+	goto out;
+}
+EXPORT_SYMBOL(__inet_stream_connect_TUv1);
+
 int inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 			int addr_len, int flags)
 {
@@ -732,6 +887,18 @@ int inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	return err;
 }
 EXPORT_SYMBOL(inet_stream_connect);
+
+int inet_stream_connect_TUv1(struct socket *sock, struct sockaddr *uaddr,
+			int addr_len, int flags, unsigned short userport)
+{
+	int err;
+
+	lock_sock(sock->sk);
+	err = __inet_stream_connect_TUv1(sock, uaddr, addr_len, flags, 0, userport);
+	release_sock(sock->sk);
+	return err;
+}
+EXPORT_SYMBOL(inet_stream_connect_TUv1);
 
 /*
  *	Accept a pending connection. The TCP layer now gives BSD semantics.
@@ -1034,6 +1201,7 @@ const struct proto_ops inet_stream_ops = {
 	.release	   = inet_release,
 	.bind		   = inet_bind,
 	.connect	   = inet_stream_connect,
+	.connect_TUv1  = inet_stream_connect_TUv1,
 	.socketpair	   = sock_no_socketpair,
 	.accept		   = inet_accept,
 	.getname	   = inet_getname,
@@ -1069,6 +1237,7 @@ const struct proto_ops inet_dgram_ops = {
 	.release	   = inet_release,
 	.bind		   = inet_bind,
 	.connect	   = inet_dgram_connect,
+	.connect_TUv1  = inet_dgram_connect_TUv1,
 	.socketpair	   = sock_no_socketpair,
 	.accept		   = sock_no_accept,
 	.getname	   = inet_getname,
@@ -1101,6 +1270,7 @@ static const struct proto_ops inet_sockraw_ops = {
 	.release	   = inet_release,
 	.bind		   = inet_bind,
 	.connect	   = inet_dgram_connect,
+	.connect_TUv1  = inet_dgram_connect_TUv1,
 	.socketpair	   = sock_no_socketpair,
 	.accept		   = sock_no_accept,
 	.getname	   = inet_getname,

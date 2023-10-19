@@ -2208,6 +2208,7 @@ static const struct proto_ops iucv_sock_ops = {
 	.release	= iucv_sock_release,
 	.bind		= iucv_sock_bind,
 	.connect	= iucv_sock_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.listen		= iucv_sock_listen,
 	.accept		= iucv_sock_accept,
 	.getname	= iucv_sock_getname,

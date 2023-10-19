@@ -2006,6 +2006,29 @@ out:
 	return err;
 }
 
+int __sys_connect_file_TUv1(struct file *file, struct sockaddr_storage *address,
+		       int addrlen, int file_flags, unsigned short userport)
+{
+	struct socket *sock;
+	int err;
+
+	sock = sock_from_file(file);
+	if (!sock) {
+		err = -ENOTSOCK;
+		goto out;
+	}
+
+	err =
+	    security_socket_connect(sock, (struct sockaddr *)address, addrlen);
+	if (err)
+		goto out;
+
+	err = sock->ops->connect_TUv1(sock, (struct sockaddr *)address, addrlen,
+				 sock->file->f_flags | file_flags, userport);
+out:
+	return err;
+}
+
 int __sys_connect(int fd, struct sockaddr __user *uservaddr, int addrlen)
 {
 	int ret = -EBADF;
@@ -2024,10 +2047,34 @@ int __sys_connect(int fd, struct sockaddr __user *uservaddr, int addrlen)
 	return ret;
 }
 
+int __sys_connect_TUv1(int fd, struct sockaddr __user *uservaddr, int addrlen, unsigned short userport)
+{
+	int ret = -EBADF;
+	struct fd f;
+
+	f = fdget(fd);
+	if (f.file) {
+		struct sockaddr_storage address;
+
+		ret = move_addr_to_kernel(uservaddr, addrlen, &address);
+		if (!ret)
+			ret = __sys_connect_file_TUv1(f.file, &address, addrlen, 0, userport);
+		fdput(f);
+	}
+
+	return ret;
+}
+
 SYSCALL_DEFINE3(connect, int, fd, struct sockaddr __user *, uservaddr,
 		int, addrlen)
 {
 	return __sys_connect(fd, uservaddr, addrlen);
+}
+
+SYSCALL_DEFINE4(connect_TUv1, int, fd, struct sockaddr __user *, uservaddr,
+		int, addrlen, unsigned short, userport)
+{
+	return __sys_connect_TUv1(fd, uservaddr, addrlen, userport);
 }
 
 /*
@@ -3027,6 +3074,9 @@ SYSCALL_DEFINE2(socketcall, int, call, unsigned long __user *, args)
 		break;
 	case SYS_CONNECT:
 		err = __sys_connect(a0, (struct sockaddr __user *)a1, a[2]);
+		break;
+	case SYS_CONNECT_TU_V1:
+		err = __sys_connect_TUv1(a0, (struct sockaddr __user *)a1, a[2], a[3]);
 		break;
 	case SYS_LISTEN:
 		err = __sys_listen(a0, a1);

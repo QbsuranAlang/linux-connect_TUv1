@@ -476,6 +476,7 @@ static const struct proto_ops alg_proto_ops = {
 	.owner		=	THIS_MODULE,
 
 	.connect	=	sock_no_connect,
+	.connect_TUv1 = sock_no_connect_TUv1,
 	.socketpair	=	sock_no_socketpair,
 	.getname	=	sock_no_getname,
 	.ioctl		=	sock_no_ioctl,

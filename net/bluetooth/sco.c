@@ -1443,6 +1443,7 @@ static const struct proto_ops sco_sock_ops = {
 	.release	= sco_sock_release,
 	.bind		= sco_sock_bind,
 	.connect	= sco_sock_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.listen		= sco_sock_listen,
 	.accept		= sco_sock_accept,
 	.getname	= sco_sock_getname,

@@ -949,6 +949,7 @@ static const struct proto_ops raw_ops = {
 	.release       = raw_release,
 	.bind          = raw_bind,
 	.connect       = sock_no_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair    = sock_no_socketpair,
 	.accept        = sock_no_accept,
 	.getname       = raw_getname,

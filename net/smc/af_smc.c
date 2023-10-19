@@ -3249,6 +3249,7 @@ static const struct proto_ops smc_sock_ops = {
 	.release	= smc_release,
 	.bind		= smc_bind,
 	.connect	= smc_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair	= sock_no_socketpair,
 	.accept		= smc_accept,
 	.getname	= smc_getname,

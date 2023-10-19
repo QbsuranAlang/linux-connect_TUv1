@@ -1120,6 +1120,121 @@ error:
 	return -ENOMEM;
 }
 
+int __inet_hash_connect_TUv1(struct inet_timewait_death_row *death_row,
+		struct sock *sk, u64 port_offset,
+		int (*check_established)(struct inet_timewait_death_row *,
+			struct sock *, __u16, struct inet_timewait_sock **),
+		unsigned short userport)
+{
+	struct inet_hashinfo *hinfo = death_row->hashinfo;
+	struct inet_bind_hashbucket *head, *head2;
+	struct inet_timewait_sock *tw = NULL;
+	int port = inet_sk(sk)->inet_num;
+	struct net *net = sock_net(sk);
+	struct inet_bind2_bucket *tb2;
+	struct inet_bind_bucket *tb;
+	bool tb_created = false;
+	int ret, i;
+	int l3mdev;
+	u32 index;
+
+	if (port) {
+		local_bh_disable();
+		ret = check_established(death_row, sk, port, NULL);
+		local_bh_enable();
+		return ret;
+	}
+
+	l3mdev = inet_sk_bound_l3mdev(sk);
+
+	port = userport;
+	if (inet_is_local_reserved_port(net, port))
+		return -EINVAL;
+	head = &hinfo->bhash[inet_bhashfn(net, port,
+					  hinfo->bhash_size)];
+	spin_lock_bh(&head->lock);
+
+	/* Does not bother with rcv_saddr checks, because
+	 * the established check is already unique enough.
+	 */
+	inet_bind_bucket_for_each(tb, &head->chain) {
+		if (inet_bind_bucket_match(tb, net, port, l3mdev)) {
+			if (tb->fastreuse >= 0 ||
+			    tb->fastreuseport >= 0)
+				goto next_port;
+			WARN_ON(hlist_empty(&tb->owners));
+			if (!check_established(death_row, sk,
+					       port, &tw))
+				goto ok;
+			goto next_port;
+		}
+	}
+
+	tb = inet_bind_bucket_create(hinfo->bind_bucket_cachep,
+				     net, head, port, l3mdev);
+	if (!tb) {
+		spin_unlock_bh(&head->lock);
+		return -ENOMEM;
+	}
+	tb_created = true;
+	tb->fastreuse = -1;
+	tb->fastreuseport = -1;
+	goto ok;
+next_port:
+	spin_unlock_bh(&head->lock);
+	cond_resched();
+
+	return -EADDRNOTAVAIL;
+
+ok:
+	/* Find the corresponding tb2 bucket since we need to
+	 * add the socket to the bhash2 table as well
+	 */
+	head2 = inet_bhashfn_portaddr(hinfo, sk, net, port);
+	spin_lock(&head2->lock);
+
+	tb2 = inet_bind2_bucket_find(head2, net, port, l3mdev, sk);
+	if (!tb2) {
+		tb2 = inet_bind2_bucket_create(hinfo->bind2_bucket_cachep, net,
+					       head2, port, l3mdev, sk);
+		if (!tb2)
+			goto error;
+	}
+
+	/* Here we want to add a little bit of randomness to the next source
+	 * port that will be chosen. We use a max() with a random here so that
+	 * on low contention the randomness is maximal and on high contention
+	 * it may be inexistent.
+	 */
+	i = max_t(int, i, get_random_u32_below(8) * 2);
+	WRITE_ONCE(table_perturb[index], READ_ONCE(table_perturb[index]) + i + 2);
+
+	/* Head lock still held and bh's disabled */
+	inet_bind_hash(sk, tb, tb2, port);
+
+	if (sk_unhashed(sk)) {
+		inet_sk(sk)->inet_sport = htons(port);
+		inet_ehash_nolisten(sk, (struct sock *)tw, NULL);
+	}
+	if (tw)
+		inet_twsk_bind_unhash(tw, hinfo);
+
+	spin_unlock(&head2->lock);
+	spin_unlock(&head->lock);
+
+	if (tw)
+		inet_twsk_deschedule_put(tw);
+	local_bh_enable();
+	return 0;
+
+error:
+	spin_unlock(&head2->lock);
+	if (tb_created)
+		inet_bind_bucket_destroy(hinfo->bind_bucket_cachep, tb);
+	spin_unlock_bh(&head->lock);
+	return -ENOMEM;
+}
+
 /*
  * Bind a port for a connect operation and hash it.
  */
@@ -1134,6 +1249,18 @@ int inet_hash_connect(struct inet_timewait_death_row *death_row,
 				   __inet_check_established);
 }
 EXPORT_SYMBOL_GPL(inet_hash_connect);
+
+int inet_hash_connect_TUv1(struct inet_timewait_death_row *death_row,
+		      struct sock *sk, unsigned short userport)
+{
+	u64 port_offset = 0;
+
+	if (!inet_sk(sk)->inet_num)
+		port_offset = inet_sk_port_offset(sk);
+	return __inet_hash_connect_TUv1(death_row, sk, port_offset,
+				   __inet_check_established, userport);
+}
+EXPORT_SYMBOL_GPL(inet_hash_connect_TUv1);
 
 static void init_hashinfo_lhash2(struct inet_hashinfo *h)
 {

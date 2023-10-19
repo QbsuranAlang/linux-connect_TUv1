@@ -1351,6 +1351,7 @@ static const struct proto_ops nr_proto_ops = {
 	.release	=	nr_release,
 	.bind		=	nr_bind,
 	.connect	=	nr_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair	=	sock_no_socketpair,
 	.accept		=	nr_accept,
 	.getname	=	nr_getname,

@@ -326,6 +326,18 @@ int inet6_hash_connect(struct inet_timewait_death_row *death_row,
 }
 EXPORT_SYMBOL_GPL(inet6_hash_connect);
 
+int inet6_hash_connect_TUv1(struct inet_timewait_death_row *death_row,
+		       struct sock *sk, unsigned short userport)
+{
+	u64 port_offset = 0;
+
+	if (!inet_sk(sk)->inet_num)
+		port_offset = inet6_sk_port_offset(sk);
+	return __inet_hash_connect_TUv1(death_row, sk, port_offset,
+				   __inet6_check_established, userport);
+}
+EXPORT_SYMBOL_GPL(inet6_hash_connect_TUv1);
+
 int inet6_hash(struct sock *sk)
 {
 	int err = 0;

@@ -1687,6 +1687,7 @@ static const struct proto_ops isotp_ops = {
 	.release = isotp_release,
 	.bind = isotp_bind,
 	.connect = sock_no_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair = sock_no_socketpair,
 	.accept = sock_no_accept,
 	.getname = isotp_getname,

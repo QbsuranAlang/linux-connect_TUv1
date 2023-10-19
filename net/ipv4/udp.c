@@ -2957,6 +2957,7 @@ struct proto udp_prot = {
 	.close			= udp_lib_close,
 	.pre_connect		= udp_pre_connect,
 	.connect		= ip4_datagram_connect,
+	.connect_TUv1 = ip4_datagram_connect_TUv1,
 	.disconnect		= udp_disconnect,
 	.ioctl			= udp_ioctl,
 	.init			= udp_init_sock,

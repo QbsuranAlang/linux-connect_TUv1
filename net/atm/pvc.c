@@ -110,6 +110,7 @@ static const struct proto_ops pvc_proto_ops = {
 	.release =	vcc_release,
 	.bind =		pvc_bind,
 	.connect =	pvc_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair =	sock_no_socketpair,
 	.accept =	sock_no_accept,
 	.getname =	pvc_getname,

@@ -1762,6 +1762,7 @@ struct proto udpv6_prot = {
 	.close			= udp_lib_close,
 	.pre_connect		= udpv6_pre_connect,
 	.connect		= ip6_datagram_connect,
+	.connect_TUv1 = ip6_datagram_connect_TUv1,
 	.disconnect		= udp_disconnect,
 	.ioctl			= udp_ioctl,
 	.init			= udpv6_init_sock,

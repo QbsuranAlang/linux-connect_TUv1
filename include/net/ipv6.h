@@ -1197,9 +1197,15 @@ int ipv6_getsockopt(struct sock *sk, int level, int optname,
 
 int __ip6_datagram_connect(struct sock *sk, struct sockaddr *addr,
 			   int addr_len);
+int __ip6_datagram_connect_TUv1(struct sock *sk, struct sockaddr *addr,
+			   int addr_len, unsigned short userport);
 int ip6_datagram_connect(struct sock *sk, struct sockaddr *addr, int addr_len);
+int ip6_datagram_connect_TUv1(struct sock *sk, struct sockaddr *addr, int addr_len,
+				 unsigned short userport);
 int ip6_datagram_connect_v6_only(struct sock *sk, struct sockaddr *addr,
 				 int addr_len);
+int ip6_datagram_connect_v6_only_TUv1(struct sock *sk, struct sockaddr *addr,
+				 int addr_len, unsigned short userport);
 int ip6_datagram_dst_update(struct sock *sk, bool fix_sk_saddr);
 void ip6_datagram_release_cb(struct sock *sk);
 
@@ -1224,6 +1230,8 @@ int inet6_compat_ioctl(struct socket *sock, unsigned int cmd,
 
 int inet6_hash_connect(struct inet_timewait_death_row *death_row,
 			      struct sock *sk);
+int inet6_hash_connect_TUv1(struct inet_timewait_death_row *death_row,
+			      struct sock *sk, unsigned short userport);
 int inet6_sendmsg(struct socket *sock, struct msghdr *msg, size_t size);
 int inet6_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 		  int flags);

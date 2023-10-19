@@ -25,10 +25,16 @@ struct socket;
 int inet_release(struct socket *sock);
 int inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 			int addr_len, int flags);
+int inet_stream_connect_TUv1(struct socket *sock, struct sockaddr *uaddr,
+			int addr_len, int flags, unsigned short userport);
 int __inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 			  int addr_len, int flags, int is_sendmsg);
+int __inet_stream_connect_TUv1(struct socket *sock, struct sockaddr *uaddr,
+			  int addr_len, int flags, int is_sendmsg, unsigned short userport);
 int inet_dgram_connect(struct socket *sock, struct sockaddr *uaddr,
 		       int addr_len, int flags);
+int inet_dgram_connect_TUv1(struct socket *sock, struct sockaddr *uaddr,
+		       int addr_len, int flags, unsigned short userport);
 int inet_accept(struct socket *sock, struct socket *newsock, int flags,
 		bool kern);
 int inet_send_prepare(struct sock *sk);

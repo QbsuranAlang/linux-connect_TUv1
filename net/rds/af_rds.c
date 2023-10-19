@@ -641,6 +641,7 @@ static const struct proto_ops rds_proto_ops = {
 	.release =	rds_release,
 	.bind =		rds_bind,
 	.connect =	rds_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair =	sock_no_socketpair,
 	.accept =	sock_no_accept,
 	.getname =	rds_getname,

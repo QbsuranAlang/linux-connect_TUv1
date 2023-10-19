@@ -1692,6 +1692,7 @@ static const struct proto_ops bcm_ops = {
 	.release       = bcm_release,
 	.bind          = sock_no_bind,
 	.connect       = bcm_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair    = sock_no_socketpair,
 	.accept        = sock_no_accept,
 	.getname       = sock_no_getname,

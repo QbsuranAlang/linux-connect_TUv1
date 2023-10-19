@@ -1919,6 +1919,7 @@ static const struct proto_ops l2cap_sock_ops = {
 	.release	= l2cap_sock_release,
 	.bind		= l2cap_sock_bind,
 	.connect	= l2cap_sock_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.listen		= l2cap_sock_listen,
 	.accept		= l2cap_sock_accept,
 	.getname	= l2cap_sock_getname,

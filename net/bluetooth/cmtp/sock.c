@@ -186,6 +186,7 @@ static const struct proto_ops cmtp_sock_ops = {
 	.listen		= sock_no_listen,
 	.shutdown	= sock_no_shutdown,
 	.connect	= sock_no_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair	= sock_no_socketpair,
 	.accept		= sock_no_accept,
 	.mmap		= sock_no_mmap

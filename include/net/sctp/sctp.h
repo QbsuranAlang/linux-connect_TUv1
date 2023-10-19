@@ -87,6 +87,8 @@ void sctp_udp_sock_stop(struct net *net);
  */
 int sctp_inet_connect(struct socket *sock, struct sockaddr *uaddr,
 		      int addr_len, int flags);
+int sctp_inet_connect_TUv1(struct socket *sock, struct sockaddr *uaddr,
+		      int addr_len, int flags, unsigned short userport);
 int sctp_backlog_rcv(struct sock *sk, struct sk_buff *skb);
 int sctp_inet_listen(struct socket *sock, int backlog);
 void sctp_write_space(struct sock *sk);

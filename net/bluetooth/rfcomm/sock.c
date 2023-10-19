@@ -1018,6 +1018,7 @@ static const struct proto_ops rfcomm_sock_ops = {
 	.release	= rfcomm_sock_release,
 	.bind		= rfcomm_sock_bind,
 	.connect	= rfcomm_sock_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.listen		= rfcomm_sock_listen,
 	.accept		= rfcomm_sock_accept,
 	.getname	= rfcomm_sock_getname,

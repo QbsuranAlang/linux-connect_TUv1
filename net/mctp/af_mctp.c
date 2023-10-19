@@ -472,6 +472,7 @@ static const struct proto_ops mctp_dgram_ops = {
 	.release	= mctp_release,
 	.bind		= mctp_bind,
 	.connect	= sock_no_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair	= sock_no_socketpair,
 	.accept		= sock_no_accept,
 	.getname	= sock_no_getname,

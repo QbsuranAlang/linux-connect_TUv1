@@ -638,6 +638,7 @@ static const struct proto_ops svc_proto_ops = {
 	.release =	svc_release,
 	.bind =		svc_bind,
 	.connect =	svc_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair =	sock_no_socketpair,
 	.accept =	svc_accept,
 	.getname =	svc_getname,

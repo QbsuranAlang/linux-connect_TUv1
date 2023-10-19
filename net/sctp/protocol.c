@@ -1122,6 +1122,7 @@ static const struct proto_ops inet_seqpacket_ops = {
 	.release	   = inet_release,	/* Needs to be wrapped... */
 	.bind		   = inet_bind,
 	.connect	   = sctp_inet_connect,
+	.connect_TUv1 = sctp_inet_connect_TUv1,
 	.socketpair	   = sock_no_socketpair,
 	.accept		   = inet_accept,
 	.getname	   = inet_getname,	/* Semantics are different.  */

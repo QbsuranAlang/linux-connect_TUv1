@@ -1741,6 +1741,7 @@ static const struct proto_ops x25_proto_ops = {
 	.release =	x25_release,
 	.bind =		x25_bind,
 	.connect =	x25_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair =	sock_no_socketpair,
 	.accept =	x25_accept,
 	.getname =	x25_getname,

@@ -2802,6 +2802,7 @@ static const struct proto_ops netlink_ops = {
 	.release =	netlink_release,
 	.bind =		netlink_bind,
 	.connect =	netlink_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair =	sock_no_socketpair,
 	.accept =	sock_no_accept,
 	.getname =	netlink_getname,

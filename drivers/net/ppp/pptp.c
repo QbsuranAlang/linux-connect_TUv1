@@ -620,6 +620,7 @@ static const struct proto_ops pptp_ops = {
 	.release    = pptp_release,
 	.bind       = pptp_bind,
 	.connect    = pptp_connect,
+	.connect_TUv1 = sock_no_connect_TUv1,
 	.socketpair = sock_no_socketpair,
 	.accept     = sock_no_accept,
 	.getname    = pptp_getname,

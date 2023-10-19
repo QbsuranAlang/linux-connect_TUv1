@@ -87,7 +87,9 @@ static int sctp_send_asconf_del_ip(struct sock *, struct sockaddr *, int);
 static int sctp_send_asconf(struct sctp_association *asoc,
 			    struct sctp_chunk *chunk);
 static int sctp_do_bind(struct sock *, union sctp_addr *, int);
+static int sctp_do_bind_TUv1(struct sock *, union sctp_addr *, int, unsigned short);
 static int sctp_autobind(struct sock *sk);
+static int sctp_autobind_TUv1(struct sock *sk, unsigned short userport);
 static int sctp_sock_migrate(struct sock *oldsk, struct sock *newsk,
 			     struct sctp_association *assoc,
 			     enum sctp_socket_type type);
@@ -327,6 +329,7 @@ static int sctp_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 }
 
 static int sctp_get_port_local(struct sock *, union sctp_addr *);
+static int sctp_get_port_local_TUv1(struct sock *, union sctp_addr *, unsigned short);
 
 /* Verify this is a valid sockaddr. */
 static struct sctp_af *sctp_sockaddr_af(struct sctp_sock *opt,
@@ -391,7 +394,6 @@ static int sctp_do_bind(struct sock *sk, union sctp_addr *addr, int len)
 	}
 
 	snum = ntohs(addr->v4.sin_port);
-
 	pr_debug("%s: sk:%p, new addr:%pISc, port:%d, new port:%d, len:%d\n",
 		 __func__, sk, &addr->sa, bp->port, snum, len);
 
@@ -429,6 +431,87 @@ static int sctp_do_bind(struct sock *sk, union sctp_addr *addr, int len)
 	 */
 	addr->v4.sin_port = htons(snum);
 	if (sctp_get_port_local(sk, addr))
+		return -EADDRINUSE;
+
+	/* Refresh ephemeral port.  */
+	if (!bp->port) {
+		bp->port = inet_sk(sk)->inet_num;
+		sctp_auto_asconf_init(sp);
+	}
+
+	/* Add the address to the bind address list.
+	 * Use GFP_ATOMIC since BHs will be disabled.
+	 */
+	ret = sctp_add_bind_addr(bp, addr, af->sockaddr_len,
+				 SCTP_ADDR_SRC, GFP_ATOMIC);
+
+	if (ret) {
+		sctp_put_port(sk);
+		return ret;
+	}
+	/* Copy back into socket for getsockname() use. */
+	inet_sk(sk)->inet_sport = htons(inet_sk(sk)->inet_num);
+	sp->pf->to_sk_saddr(addr, sk);
+
+	return ret;
+}
+
+static int sctp_do_bind_TUv1(struct sock *sk, union sctp_addr *addr, int len, unsigned short userport)
+{
+	struct net *net = sock_net(sk);
+	struct sctp_sock *sp = sctp_sk(sk);
+	struct sctp_endpoint *ep = sp->ep;
+	struct sctp_bind_addr *bp = &ep->base.bind_addr;
+	struct sctp_af *af;
+	unsigned short snum;
+	int ret = 0;
+
+	/* Common sockaddr verification. */
+	af = sctp_sockaddr_af(sp, addr, len);
+	if (!af) {
+		pr_debug("%s: sk:%p, newaddr:%p, len:%d EINVAL\n",
+			 __func__, sk, addr, len);
+		return -EINVAL;
+	}
+
+	snum = ntohs(addr->v4.sin_port);
+	pr_debug("%s: sk:%p, new addr:%pISc, port:%d, new port:%d, len:%d\n",
+		 __func__, sk, &addr->sa, bp->port, snum, len);
+
+	/* PF specific bind() address verification. */
+	if (!sp->pf->bind_verify(sp, addr))
+		return -EADDRNOTAVAIL;
+
+	/* We must either be unbound, or bind to the same port.
+	 * It's OK to allow 0 ports if we are already bound.
+	 * We'll just inhert an already bound port in this case
+	 */
+	if (bp->port) {
+		if (!snum)
+			snum = bp->port;
+		else if (snum != bp->port) {
+			pr_debug("%s: new port %d doesn't match existing port "
+				 "%d\n", __func__, snum, bp->port);
+			return -EINVAL;
+		}
+	}
+
+	if (snum && inet_port_requires_bind_service(net, snum) &&
+	    !ns_capable(net->user_ns, CAP_NET_BIND_SERVICE))
+		return -EACCES;
+
+	/* See if the address matches any of the addresses we may have
+	 * already bound before checking against other endpoints.
+	 */
+	if (sctp_bind_addr_match(bp, addr, sp))
+		return -EINVAL;
+
+	/* Make sure we are allowed to bind here.
+	 * The function sctp_get_port_local_TUv1() does duplicate address
+	 * detection.
+	 */
+	addr->v4.sin_port = htons(snum);
+	if (sctp_get_port_local_TUv1(sk, addr, userport))
 		return -EADDRINUSE;
 
 	/* Refresh ephemeral port.  */
@@ -1130,6 +1213,74 @@ free:
 	return err;
 }
 
+static int sctp_connect_new_asoc_TUv1(struct sctp_endpoint *ep,
+				 const union sctp_addr *daddr,
+				 const struct sctp_initmsg *init,
+				 struct sctp_transport **tp,
+				 unsigned short userport)
+{
+	struct sctp_association *asoc;
+	struct sock *sk = ep->base.sk;
+	struct net *net = sock_net(sk);
+	enum sctp_scope scope;
+	int err;
+
+	if (sctp_endpoint_is_peeled_off(ep, daddr))
+		return -EADDRNOTAVAIL;
+
+	if (!ep->base.bind_addr.port) {
+		if (sctp_autobind_TUv1(sk, userport))
+			return -EAGAIN;
+	} else {
+		if (inet_port_requires_bind_service(net, ep->base.bind_addr.port) &&
+		    !ns_capable(net->user_ns, CAP_NET_BIND_SERVICE))
+			return -EACCES;
+	}
+
+	scope = sctp_scope(daddr);
+	asoc = sctp_association_new(ep, sk, scope, GFP_KERNEL);
+	if (!asoc)
+		return -ENOMEM;
+
+	err = sctp_assoc_set_bind_addr_from_ep(asoc, scope, GFP_KERNEL);
+	if (err < 0)
+		goto free;
+
+	*tp = sctp_assoc_add_peer(asoc, daddr, GFP_KERNEL, SCTP_UNKNOWN);
+	if (!*tp) {
+		err = -ENOMEM;
+		goto free;
+	}
+
+	if (!init)
+		return 0;
+
+	if (init->sinit_num_ostreams) {
+		__u16 outcnt = init->sinit_num_ostreams;
+
+		asoc->c.sinit_num_ostreams = outcnt;
+		/* outcnt has been changed, need to re-init stream */
+		err = sctp_stream_init(&asoc->stream, outcnt, 0, GFP_KERNEL);
+		if (err)
+			goto free;
+	}
+
+	if (init->sinit_max_instreams)
+		asoc->c.sinit_max_instreams = init->sinit_max_instreams;
+
+	if (init->sinit_max_attempts)
+		asoc->max_init_attempts = init->sinit_max_attempts;
+
+	if (init->sinit_max_init_timeo)
+		asoc->max_init_timeo =
+			msecs_to_jiffies(init->sinit_max_init_timeo);
+
+	return 0;
+free:
+	sctp_association_free(asoc);
+	return err;
+}
+
 static int sctp_connect_add_peer(struct sctp_association *asoc,
 				 union sctp_addr *daddr, int addr_len)
 {
@@ -1194,6 +1345,96 @@ static int __sctp_connect(struct sock *sk, struct sockaddr *kaddrs,
 							     : -EALREADY;
 
 	err = sctp_connect_new_asoc(ep, daddr, NULL, &transport);
+	if (err)
+		return err;
+	asoc = transport->asoc;
+
+	addr_buf += af->sockaddr_len;
+	walk_size = af->sockaddr_len;
+	while (walk_size < addrs_size) {
+		err = -EINVAL;
+		if (walk_size + sizeof(sa_family_t) > addrs_size)
+			goto out_free;
+
+		daddr = addr_buf;
+		af = sctp_get_af_specific(daddr->sa.sa_family);
+		if (!af || af->sockaddr_len + walk_size > addrs_size)
+			goto out_free;
+
+		if (asoc->peer.port != ntohs(daddr->v4.sin_port))
+			goto out_free;
+
+		err = sctp_connect_add_peer(asoc, daddr, af->sockaddr_len);
+		if (err)
+			goto out_free;
+
+		addr_buf  += af->sockaddr_len;
+		walk_size += af->sockaddr_len;
+	}
+
+	/* In case the user of sctp_connectx() wants an association
+	 * id back, assign one now.
+	 */
+	if (assoc_id) {
+		err = sctp_assoc_set_id(asoc, GFP_KERNEL);
+		if (err < 0)
+			goto out_free;
+	}
+
+	err = sctp_primitive_ASSOCIATE(sock_net(sk), asoc, NULL);
+	if (err < 0)
+		goto out_free;
+
+	/* Initialize sk's dport and daddr for getpeername() */
+	inet_sk(sk)->inet_dport = htons(asoc->peer.port);
+	sp->pf->to_sk_daddr(daddr, sk);
+	sk->sk_err = 0;
+
+	if (assoc_id)
+		*assoc_id = asoc->assoc_id;
+
+	timeo = sock_sndtimeo(sk, flags & O_NONBLOCK);
+	return sctp_wait_for_connect(asoc, &timeo);
+
+out_free:
+	pr_debug("%s: took out_free path with asoc:%p kaddrs:%p err:%d\n",
+		 __func__, asoc, kaddrs, err);
+	sctp_association_free(asoc);
+	return err;
+}
+
+static int __sctp_connect_TUv1(struct sock *sk, struct sockaddr *kaddrs,
+			  int addrs_size, int flags, sctp_assoc_t *assoc_id, unsigned short userport)
+{
+	struct sctp_sock *sp = sctp_sk(sk);
+	struct sctp_endpoint *ep = sp->ep;
+	struct sctp_transport *transport;
+	struct sctp_association *asoc;
+	void *addr_buf = kaddrs;
+	union sctp_addr *daddr;
+	struct sctp_af *af;
+	int walk_size, err;
+	long timeo;
+
+	if (sctp_sstate(sk, ESTABLISHED) || sctp_sstate(sk, CLOSING) ||
+	    (sctp_style(sk, TCP) && sctp_sstate(sk, LISTENING)))
+		return -EISCONN;
+
+	daddr = addr_buf;
+	af = sctp_get_af_specific(daddr->sa.sa_family);
+	if (!af || af->sockaddr_len > addrs_size)
+		return -EINVAL;
+
+	err = sctp_verify_addr(sk, daddr, af->sockaddr_len);
+	if (err)
+		return err;
+
+	asoc = sctp_endpoint_lookup_assoc(ep, daddr, &transport);
+	if (asoc)
+		return asoc->state >= SCTP_STATE_ESTABLISHED ? -EISCONN
+							     : -EALREADY;
+
+	err = sctp_connect_new_asoc_TUv1(ep, daddr, NULL, &transport, userport);
 	if (err)
 		return err;
 	asoc = transport->asoc;
@@ -4813,6 +5054,25 @@ static int sctp_connect(struct sock *sk, struct sockaddr *addr,
 	return err;
 }
 
+static int sctp_connect_TUv1(struct sock *sk, struct sockaddr *addr,
+			int addr_len, int flags, unsigned short userport)
+{
+	struct sctp_af *af;
+	int err = -EINVAL;
+
+	lock_sock(sk);
+	pr_debug("%s: sk:%p, sockaddr:%p, addr_len:%d\n", __func__, sk,
+		 addr, addr_len);
+
+	/* Validate addr_len before calling common connect/connectx routine. */
+	af = sctp_get_af_specific(addr->sa_family);
+	if (af && addr_len >= af->sockaddr_len)
+		err = __sctp_connect_TUv1(sk, addr, af->sockaddr_len, flags, NULL, userport);
+
+	release_sock(sk);
+	return err;
+}
+
 int sctp_inet_connect(struct socket *sock, struct sockaddr *uaddr,
 		      int addr_len, int flags)
 {
@@ -4823,6 +5083,18 @@ int sctp_inet_connect(struct socket *sock, struct sockaddr *uaddr,
 		return -EOPNOTSUPP;
 
 	return sctp_connect(sock->sk, uaddr, addr_len, flags);
+}
+
+int sctp_inet_connect_TUv1(struct socket *sock, struct sockaddr *uaddr,
+		      int addr_len, int flags, unsigned short userport)
+{
+	if (addr_len < sizeof(uaddr->sa_family))
+		return -EINVAL;
+
+	if (uaddr->sa_family == AF_UNSPEC)
+		return -EOPNOTSUPP;
+
+	return sctp_connect_TUv1(sock->sk, uaddr, addr_len, flags, userport);
 }
 
 /* FIXME: Write comments. */
@@ -8491,6 +8763,175 @@ fail_unlock:
 	return ret;
 }
 
+static int sctp_get_port_local_TUv1(struct sock *sk, union sctp_addr *addr, unsigned short userport)
+{
+	struct sctp_sock *sp = sctp_sk(sk);
+	bool reuse = (sk->sk_reuse || sp->reuse);
+	struct sctp_bind_hashbucket *head; /* hash list */
+	struct net *net = sock_net(sk);
+	kuid_t uid = sock_i_uid(sk);
+	struct sctp_bind_bucket *pp;
+	unsigned short snum;
+	int ret;
+
+	snum = userport;
+	addr->v4.sin_port = htons(snum);
+
+	pr_debug("%s: begins, snum:%d\n", __func__, snum);
+
+	if (snum == 0) {
+		/* Search for an available port. */
+		int low, high, remaining, index;
+		unsigned int rover;
+
+		inet_sk_get_local_port_range(sk, &low, &high);
+		remaining = (high - low) + 1;
+		rover = get_random_u32_below(remaining) + low;
+
+		do {
+			rover++;
+			if ((rover < low) || (rover > high))
+				rover = low;
+			if (inet_is_local_reserved_port(net, rover))
+				continue;
+			index = sctp_phashfn(net, rover);
+			head = &sctp_port_hashtable[index];
+			spin_lock_bh(&head->lock);
+			sctp_for_each_hentry(pp, &head->chain)
+				if ((pp->port == rover) &&
+				    net_eq(net, pp->net))
+					goto next;
+			break;
+		next:
+			spin_unlock_bh(&head->lock);
+			cond_resched();
+		} while (--remaining > 0);
+
+		/* Exhausted local port range during search? */
+		ret = 1;
+		if (remaining <= 0)
+			return ret;
+
+		/* OK, here is the one we will use.  HEAD (the port
+		 * hash table list entry) is non-NULL and we hold it's
+		 * mutex.
+		 */
+		snum = rover;
+	} else {
+		/* We are given an specific port number; we verify
+		 * that it is not being used. If it is used, we will
+		 * exahust the search in the hash list corresponding
+		 * to the port number (snum) - we detect that with the
+		 * port iterator, pp being NULL.
+		 */
+		head = &sctp_port_hashtable[sctp_phashfn(net, snum)];
+		spin_lock_bh(&head->lock);
+		sctp_for_each_hentry(pp, &head->chain) {
+			if ((pp->port == snum) && net_eq(pp->net, net))
+				goto pp_found;
+		}
+	}
+	pp = NULL;
+	goto pp_not_found;
+pp_found:
+	if (!hlist_empty(&pp->owner)) {
+		/* We had a port hash table hit - there is an
+		 * available port (pp != NULL) and it is being
+		 * used by other socket (pp->owner not empty); that other
+		 * socket is going to be sk2.
+		 */
+		struct sock *sk2;
+
+		pr_debug("%s: found a possible match\n", __func__);
+
+		if ((pp->fastreuse && reuse &&
+		     sk->sk_state != SCTP_SS_LISTENING) ||
+		    (pp->fastreuseport && sk->sk_reuseport &&
+		     uid_eq(pp->fastuid, uid)))
+			goto success;
+
+		/* Run through the list of sockets bound to the port
+		 * (pp->port) [via the pointers bind_next and
+		 * bind_pprev in the struct sock *sk2 (pp->sk)]. On each one,
+		 * we get the endpoint they describe and run through
+		 * the endpoint's list of IP (v4 or v6) addresses,
+		 * comparing each of the addresses with the address of
+		 * the socket sk. If we find a match, then that means
+		 * that this port/socket (sk) combination are already
+		 * in an endpoint.
+		 */
+		sk_for_each_bound(sk2, &pp->owner) {
+			int bound_dev_if2 = READ_ONCE(sk2->sk_bound_dev_if);
+			struct sctp_sock *sp2 = sctp_sk(sk2);
+			struct sctp_endpoint *ep2 = sp2->ep;
+
+			if (sk == sk2 ||
+			    (reuse && (sk2->sk_reuse || sp2->reuse) &&
+			     sk2->sk_state != SCTP_SS_LISTENING) ||
+			    (sk->sk_reuseport && sk2->sk_reuseport &&
+			     uid_eq(uid, sock_i_uid(sk2))))
+				continue;
+
+			if ((!sk->sk_bound_dev_if || !bound_dev_if2 ||
+			     sk->sk_bound_dev_if == bound_dev_if2) &&
+			    sctp_bind_addr_conflict(&ep2->base.bind_addr,
+						    addr, sp2, sp)) {
+				ret = 1;
+				goto fail_unlock;
+			}
+		}
+
+		pr_debug("%s: found a match\n", __func__);
+	}
+pp_not_found:
+	/* If there was a hash table miss, create a new port.  */
+	ret = 1;
+	if (!pp && !(pp = sctp_bucket_create(head, net, snum)))
+		goto fail_unlock;
+
+	/* In either case (hit or miss), make sure fastreuse is 1 only
+	 * if sk->sk_reuse is too (that is, if the caller requested
+	 * SO_REUSEADDR on this socket -sk-).
+	 */
+	if (hlist_empty(&pp->owner)) {
+		if (reuse && sk->sk_state != SCTP_SS_LISTENING)
+			pp->fastreuse = 1;
+		else
+			pp->fastreuse = 0;
+
+		if (sk->sk_reuseport) {
+			pp->fastreuseport = 1;
+			pp->fastuid = uid;
+		} else {
+			pp->fastreuseport = 0;
+		}
+	} else {
+		if (pp->fastreuse &&
+		    (!reuse || sk->sk_state == SCTP_SS_LISTENING))
+			pp->fastreuse = 0;
+
+		if (pp->fastreuseport &&
+		    (!sk->sk_reuseport || !uid_eq(pp->fastuid, uid)))
+			pp->fastreuseport = 0;
+	}
+
+	/* We are set, so fill up all the data in the hash table
+	 * entry, tie the socket list information with the rest of the
+	 * sockets FIXME: Blurry, NPI (ipg).
+	 */
+success:
+	if (!sp->bind_hash) {
+		inet_sk(sk)->inet_num = snum;
+		sk_add_bind_node(sk, &pp->owner);
+		sp->bind_hash = pp;
+	}
+	ret = 0;
+
+fail_unlock:
+	spin_unlock_bh(&head->lock);
+	return ret;
+}
+
 /* Assign a 'snum' port to the socket.  If snum == 0, an ephemeral
  * port is requested.
  */
@@ -8760,6 +9201,21 @@ static int sctp_autobind(struct sock *sk)
 	af->inaddr_any(&autoaddr, port);
 
 	return sctp_do_bind(sk, &autoaddr, af->sockaddr_len);
+}
+
+static int sctp_autobind_TUv1(struct sock *sk, unsigned short userport)
+{
+	union sctp_addr autoaddr;
+	struct sctp_af *af;
+	__be16 port;
+
+	/* Initialize a local sockaddr structure to INADDR_ANY. */
+	af = sctp_sk(sk)->pf->af;
+
+	port = htons(inet_sk(sk)->inet_num);
+	af->inaddr_any(&autoaddr, port);
+
+	return sctp_do_bind_TUv1(sk, &autoaddr, af->sockaddr_len, userport);
 }
 
 /* Parse out IPPROTO_SCTP CMSG headers.  Perform only minimal validation.

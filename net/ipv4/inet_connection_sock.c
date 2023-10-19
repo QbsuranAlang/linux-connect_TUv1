@@ -1250,6 +1250,7 @@ int inet_csk_listen_start(struct sock *sk)
 	 * after validation is complete.
 	 */
 	inet_sk_state_store(sk, TCP_LISTEN);
+	printk("%s %d\n", __func__, __LINE__);
 	err = sk->sk_prot->get_port(sk, inet->inet_num);
 	if (!err) {
 		inet->inet_sport = htons(inet->inet_num);

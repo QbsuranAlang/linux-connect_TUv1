@@ -1915,6 +1915,7 @@ static const struct proto_ops atalk_dgram_ops = {
 	.release	= atalk_release,
 	.bind		= atalk_bind,
 	.connect	= atalk_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair	= sock_no_socketpair,
 	.accept		= sock_no_accept,
 	.getname	= atalk_getname,

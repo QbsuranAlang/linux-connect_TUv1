@@ -2120,6 +2120,7 @@ static const struct proto_ops hci_sock_ops = {
 	.setsockopt	= hci_sock_setsockopt,
 	.getsockopt	= hci_sock_getsockopt,
 	.connect	= sock_no_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair	= sock_no_socketpair,
 	.accept		= sock_no_accept,
 	.mmap		= sock_no_mmap

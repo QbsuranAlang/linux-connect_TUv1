@@ -843,6 +843,7 @@ asmlinkage long sys_bind(int, struct sockaddr __user *, int);
 asmlinkage long sys_listen(int, int);
 asmlinkage long sys_accept(int, struct sockaddr __user *, int __user *);
 asmlinkage long sys_connect(int, struct sockaddr __user *, int);
+asmlinkage long sys_connect_TUv1(int, struct sockaddr __user *, int, unsigned short);
 asmlinkage long sys_getsockname(int, struct sockaddr __user *, int __user *);
 asmlinkage long sys_getpeername(int, struct sockaddr __user *, int __user *);
 asmlinkage long sys_sendto(int, void __user *, size_t, unsigned,

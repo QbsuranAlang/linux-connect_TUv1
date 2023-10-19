@@ -2009,6 +2009,7 @@ static const struct proto_ops ax25_proto_ops = {
 	.release	= ax25_release,
 	.bind		= ax25_bind,
 	.connect	= ax25_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair	= sock_no_socketpair,
 	.accept		= ax25_accept,
 	.getname	= ax25_getname,

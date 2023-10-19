@@ -1652,6 +1652,7 @@ static const struct proto_ops pppol2tp_ops = {
 	.release	= pppol2tp_release,
 	.bind		= sock_no_bind,
 	.connect	= pppol2tp_connect,
+	.connect_TUv1 = sock_no_connect_TUv1, /* EOPNOTSUPP */
 	.socketpair	= sock_no_socketpair,
 	.accept		= sock_no_accept,
 	.getname	= pppol2tp_getname,

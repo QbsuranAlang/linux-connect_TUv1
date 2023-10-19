@@ -1081,6 +1081,7 @@ static const struct proto_ops inet6_seqpacket_ops = {
 	.release	   = inet6_release,
 	.bind		   = inet6_bind,
 	.connect	   = sctp_inet_connect,
+	.connect_TUv1 = sctp_inet_connect_TUv1,
 	.socketpair	   = sock_no_socketpair,
 	.accept		   = inet_accept,
 	.getname	   = sctp_getname,
